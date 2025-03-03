@@ -393,7 +393,7 @@ def main():
     # Save predicted frames as GeoTIFF and plot
     for i in range(pred_frames.shape[1]):
 
-        delta_time = datetime_obj + timedelta(minutes=i * 10)
+        delta_time = datetime_obj + timedelta(minutes=(i+1) * 10)
         delta_time = delta_time.strftime("%Y-%m-%d %H:%M:%S")
         delta_time = delta_time.replace(":", "_").replace(" ", "_")
         frame = pred_frames[0, i, :, :, 0]  # Get first batch and first channel
