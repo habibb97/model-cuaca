@@ -19,7 +19,16 @@ from core.utils import preprocess
 
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-from matplotlib.colors import ListedColormap, BoundaryNorm
+
+import matplotlib.patches as mpatches
+import matplotlib.colors as mcolors
+import geopandas as gpd
+from scipy.ndimage import gaussian_filter
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+import matplotlib.image as mpimg
+
+import re
+from datetime import datetime, timedelta
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -116,9 +125,110 @@ def save_geotiff(data_array, output_path, reference_image):
             dst.write(data_array.astype(rasterio.float32), 1)
 
 
+def plot(
+    data,
+    min_lon,
+    max_lon,
+    min_lat,
+    max_lat,
+    lon_grid,
+    lat_grid,
+    configs,
+    kabupaten,
+    propinsi,
+    logo_path,
+    legend_patches,
+    datetime_str,
+    cmap,
+    norm,
+    delta_time,  # Waktu prediksi yang benar
+):
+    # Create figure and axis (ukuran lebih kecil)
+    fig, ax = plt.subplots(
+        figsize=(8, 6), subplot_kw={"projection": ccrs.PlateCarree()}
+    )
+    ax.set_extent([min_lon, max_lon, min_lat, max_lat])
+
+    # Add features
+    ax.add_feature(cfeature.BORDERS, linewidth=0.5)
+    ax.add_feature(cfeature.COASTLINE, linewidth=0.5)
+    ax.add_feature(cfeature.LAND, facecolor="lightgray")
+    ax.add_feature(cfeature.OCEAN, facecolor="lightblue")
+
+    # Plot data raster
+    mesh = ax.pcolormesh(
+        lon_grid,
+        lat_grid,
+        data,
+        cmap=cmap,
+        norm=norm,
+        transform=ccrs.PlateCarree(),
+        shading="auto",
+    )
+
+    # Plot shapefiles
+    kabupaten.plot(ax=ax, edgecolor="black", linewidth=0.5, facecolor="none")
+    propinsi.plot(ax=ax, edgecolor="black", linewidth=0.8, facecolor="none")
+
+    # Add text
+    ax.text(
+        min_lon + 0.1,
+        max_lat - 0.1,
+        "Prediksi Curah Hujan",
+        fontsize=7,
+        fontweight="bold",
+    )
+    ax.text(min_lon, min_lat - 0.1, "Model: PRED-RNN", fontsize=7)
+    ax.text(
+        min_lon,
+        min_lat - 0.2,
+        "Sumber data: Tim analisis citra satelit BMKG",
+        fontsize=7,
+    )
+    ax.text(max_lon, min_lat - 0.1, f"Inisial: { datetime_str}", fontsize=7, ha="right")
+    ax.text(max_lon, min_lat - 0.2, f"Prediksi: {delta_time}", fontsize=7, ha="right")
+
+    # Tambahkan legenda
+    legend = ax.legend(
+        handles=legend_patches,
+        title="Legenda",
+        loc="lower left",
+        fontsize=6,
+        borderpad=1,
+    )
+    ax.add_artist(legend)
+
+    # Colorbar
+    cbar = plt.colorbar(mappable=mesh, ax=ax, shrink=0.8, pad=0.03)
+    cbar.ax.tick_params(labelsize=5)
+    cbar.set_label("mm")
+
+    # Tambahkan logo di pojok kiri atas
+    logo = mpimg.imread(logo_path)
+    imagebox = OffsetImage(logo, zoom=0.05)  # Sesuaikan zoom untuk ukuran kecil
+    ab = AnnotationBbox(
+        imagebox, (max_lon - 0.3, max_lat - 0.3), frameon=False, transform=ax.transData
+    )
+    ax.add_artist(ab)
+
+    # Add title
+    # plt.title(f"Predicted Frame {iter}")
+
+    # Save dan tampilkan plot
+    plot_output_path = os.path.join(
+        configs.gen_frm_dir, f"predicted_frame_{delta_time}.png"
+    )
+    plt.savefig(plot_output_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
 def main():
     # Get configurations
     configs = Configs()
+
+    kabupaten = gpd.read_file("./shp_lite/Kabupaten.shp")
+    propinsi = gpd.read_file("./shp_lite/Propinsi.shp")
+    logo_path = "./shp_lite/logo_BMKG.png"
 
     # Create result directory if it doesn't exist
     if not os.path.exists(configs.gen_frm_dir):
@@ -217,27 +327,75 @@ def main():
     # Ensure predicted frames are within [0, 1]
     pred_frames = np.clip(pred_frames, 0, 1)
 
-    # Define colormap and normalization
-    cmap_colors = ["green", "yellow", "orange", "red"]
-    cmap = ListedColormap(cmap_colors)
-    cmap.set_bad(color="none")
-    bounds = [0, 0.1, 0.5, 0.8, 1.0]
-    denorm = np.array([0, 20, 100, 160, 200])
-    norm = BoundaryNorm(bounds, cmap.N)
-
     # Latitude and Longitude bounds
-    min_lat, max_lat = -9, -4
-    min_lon, max_lon = 105, 110
+    raster_min_lat, raster_max_lat = -9, -4
+    raster_min_lon, raster_max_lon = 105, 110
+    min_lon, max_lon = 105, 108
+    min_lat, max_lat = -7, -5
 
     # Create latitude and longitude arrays
-    latitudes = np.linspace(max_lat, min_lat, img_height)  # Ensure correct order
-    longitudes = np.linspace(min_lon, max_lon, img_width)
+    latitudes = np.linspace(
+        raster_max_lat, raster_min_lat, img_height
+    )  # Ensure correct order
+    longitudes = np.linspace(raster_min_lon, raster_max_lon, img_width)
 
     # Create coordinate meshgrid
     lon_grid, lat_grid = np.meshgrid(longitudes, latitudes)
+    reference_image = os.path.join(input_folder, os.listdir(input_folder)[0])
+
+    last_date = os.listdir(input_folder)[-1]
+    # Pola regex untuk mengekstrak tanggal (YYYYMMDD) dan waktu (HHMM)
+    pattern = r"(\d{8})\.Z(\d{4})"  # Menangkap tanggal dan waktu setelah 'Z'
+
+    # Mencari tanggal dan waktu dalam string
+    match = re.search(pattern, last_date)
+
+    if match:
+        # Ambil tanggal dan waktu dari hasil match
+        date_string = match.group(1)
+        time_string = match.group(2)
+        datetime_str = date_string + time_string
+        datetime_obj = datetime.strptime(datetime_str, "%Y%m%d%H%M")
+    else:
+        raise ValueError("Tanggal atau jam dan menit tidak ditemukan dalam filename")
+    # Gabungkan tanggal dan waktu menjadi format datetime
+
+    # Create legend
+    # Define colormap
+    levels = list(range(0, 220, 20))
+    colors = [
+        "#BDF2BA",
+        "#B2F2A4",
+        "#88F487",
+        "#68F422",
+        "#A4EE1B",
+        "#F2F220",
+        "#EFD216",
+        "#EBA91C",
+        "#ED8E1D",
+        "#EA661F",
+        "#EE251E",
+        "#E719B5",
+    ]
+    levels_reduced = [20, 80, 120, 160, 200]
+    colors_reduced = ["#68F422", "#F2F220", "#EBA91C", "#ED8E1D", "#E719B5"]
+    legend_patches = [
+        mpatches.Patch(
+            color=colors_reduced[i],
+            label=f"{levels_reduced[i]} - {levels_reduced[i+1]} mm",
+        )
+        for i in range(len(levels_reduced) - 1)
+    ]
+    cmap = mcolors.ListedColormap(colors[: len(levels) - 1])
+    cmap.set_bad(color="none")  # Warna untuk NaN
+    norm = mcolors.BoundaryNorm(levels, cmap.N)
 
     # Save predicted frames as GeoTIFF and plot
     for i in range(pred_frames.shape[1]):
+
+        delta_time = datetime_obj + timedelta(minutes=i * 10)
+        delta_time = delta_time.strftime("%Y-%m-%d %H:%M:%S")
+        delta_time = delta_time.replace(":", "_").replace(" ", "_")
         frame = pred_frames[0, i, :, :, 0]  # Get first batch and first channel
 
         # Ensure values are within [0, 1]
@@ -245,45 +403,65 @@ def main():
 
         # Save frame as GeoTIFF
         output_path = os.path.join(
-            configs.gen_frm_dir, f"predicted_frame_{i+1:04d}.tiff"
+            configs.gen_frm_dir, f"predicted_frame_{delta_time}.tiff"
         )
         # Use one of the input files as reference
-        reference_image = os.path.join(input_folder, os.listdir(input_folder)[0])
+
         save_geotiff(frame, output_path, reference_image=reference_image)
 
         # Prepare data for plotting
         data = frame  # Data is already in [0, 1]
-
-        # Create figure and axis with map projection
-        fig = plt.figure(figsize=(10, 8))
-        ax = plt.axes(projection=ccrs.PlateCarree())
-
-        # Add map features
-        ax.coastlines()
-        ax.add_feature(cfeature.BORDERS)
-        ax.set_extent([min_lon, max_lon, min_lat, max_lat], crs=ccrs.PlateCarree())
-
-        # Plot data using pcolormesh
-        mesh = ax.pcolormesh(
-            lon_grid, lat_grid, data, cmap=cmap, norm=norm, transform=ccrs.PlateCarree()
+        data = gaussian_filter(data, sigma=1.2)
+        plot(
+            data,
+            min_lon,
+            max_lon,
+            min_lat,
+            max_lat,
+            lon_grid,
+            lat_grid,
+            configs,
+            kabupaten,
+            propinsi,
+            logo_path,
+            legend_patches,
+            datetime_str,
+            cmap,
+            norm,
+            delta_time,  # Waktu prediksi yang benar
         )
 
-        # Add colorbar
-        cbar = plt.colorbar(mesh, ax=ax, orientation="vertical", shrink=0.7, pad=0.05)
-        cbar.set_ticklabels(denorm.astype(int))
-        cbar.set_label("mm/10 menit")
+        print(f"Prediksi {delta_time}. disimpan di folder:", configs.gen_frm_dir)
 
-        # Add title
-        plt.title(f"Predicted Frame {i+1}")
+    acc_frame30 = (
+        pred_frames[0, 0, :, :, 0]
+        + pred_frames[0, 1, :, :, 0]
+        + pred_frames[0, 2, :, :, 0]
+    )
+    acc_frame30 = np.clip(acc_frame30, 0, 1)
+    acc_frame30 = gaussian_filter(acc_frame30, sigma=1.2)
+    output_path30 = os.path.join(configs.gen_frm_dir, "accumulation_30.tiff")
+    save_geotiff(acc_frame30, output_path30, reference_image=reference_image)
 
-        # Save plot
-        plot_output_path = os.path.join(
-            configs.gen_frm_dir, f"predicted_frame_{i+1:04d}.png"
-        )
-        plt.savefig(plot_output_path, dpi=300)
-        plt.close()
-
-    print("Prediction completed. Results saved in folder:", configs.gen_frm_dir)
+    plot(
+        acc_frame30,
+        min_lon,
+        max_lon,
+        min_lat,
+        max_lat,
+        lon_grid,
+        lat_grid,
+        configs,
+        kabupaten,
+        propinsi,
+        logo_path,
+        legend_patches,
+        datetime_str,
+        cmap,
+        norm,
+        "Akumulasi 30 Menit",
+    )
+    print(f"Prediksi Akumulasi 30 menit. disimpan di folder:", configs.gen_frm_dir)
     return pred_frames, input_images
 
 
