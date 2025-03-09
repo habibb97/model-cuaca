@@ -5,8 +5,8 @@ import rasterio
 from rasterio.enums import Resampling
 
 # Ambil semua file dalam direktori
-# paths = glob.glob("/home/ubuntu/model-cuaca/dataset/202402/*/*")
-paths = glob.glob(r'D:\satelit\03\*') 
+paths = glob.glob("/home/ubuntu/model-cuaca/dataset/202402/*/*")
+# paths = glob.glob(r'D:\satelit\03\*') 
 
 # Periksa apakah ada file yang ditemukan
 batch_size = len(paths)
@@ -45,4 +45,4 @@ for i, files in enumerate(paths):
 
 print(f'jumlah data {batch_size} untuk dataset terakhir pada {paths[-1]}')
         
-np.save("satelit_dataset.npy", batch)
+np.save("data/satelit_dataset.npy", batch)
