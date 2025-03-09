@@ -1,7 +1,7 @@
 export CUDA_VISIBLE_DEVICES=0
 
 cd /D/predrnn-pytorch
-source venv/Scripts/activate
+source venv/bin/activate
 
 
 python -u run.py \
