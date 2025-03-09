@@ -13,21 +13,20 @@ import core.trainer as trainer
 # -----------------------------------------------------------------------------
 parser = argparse.ArgumentParser(description='PyTorch video prediction model - PredRNN')
 
-# training/test
+# Training/Test
 parser.add_argument('--is_training', type=int, default=1)
-parser.add_argument('--device', type=str, default='cpu:0')
+parser.add_argument('--device', type=str, default='cuda')
 
-# data
+# Data
 parser.add_argument('--dataset_name', type=str, default='mnist')
-parser.add_argument('--train_data_paths', type=str, default='data/moving-mnist-example/moving-mnist-train.npz')
-parser.add_argument('--valid_data_paths', type=str, default='data/moving-mnist-example/moving-mnist-valid.npz')
-parser.add_argument('--save_dir', type=str, default='checkpoints/mnist_predrnn')
-parser.add_argument('--gen_frm_dir', type=str, default='results/mnist_predrnn')
+parser.add_argument('--train_data_paths', type=str, default='/data/1_train.npz')
+parser.add_argument('--valid_data_paths', type=str, default='/data/1_valid.npz')
+parser.add_argument('--save_dir', type=str, default='/output/checkpoint/tes')
+parser.add_argument('--gen_frm_dir', type=str, default='/output/images')
 parser.add_argument('--input_length', type=int, default=10)
 parser.add_argument('--total_length', type=int, default=20)
-parser.add_argument('--img_width', type=int, default=64)
-parser.add_argument('--img_height', type=int, default=64) 
-parser.add_argument('--img_channel', type=int, default=1)
+parser.add_argument('--img_width', type=int, default=2350)
+parser.add_argument('--img_height', type=int, default=850)
 
 # model
 parser.add_argument('--model_name', type=str, default='predrnn')
