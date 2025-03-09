@@ -57,7 +57,7 @@ class RNN(nn.Module):
         self.cell_list = nn.ModuleList(cell_list)
         if self.configs.conv_on_input == 0:
             self.conv_last = nn.Conv2d(num_hidden[num_layers - 1], self.patch_ch + self.action_ch, 1, stride=1,
-                                       padding=0, bias=False)
+                                       padding='same', bias=False)
 
     def forward(self, all_frames, mask_true):
         # [batch, length, height, width, channel] -> [batch, length, channel, height, width]
